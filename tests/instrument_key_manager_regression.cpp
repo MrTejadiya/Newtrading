@@ -1,11 +1,11 @@
-#include <iostream>
+// GoogleTest-based regression for InstrumentKeyManager
+#include <gtest/gtest.h>
 #include <fstream>
-#include <cassert>
 #include "../src/InstrumentKeyManager.hpp"
 
 using namespace upstox::v3;
 
-void write_sample_json(const std::string& path) {
+static void write_sample_json(const std::string& path) {
     std::ofstream f(path);
     f << R"([
         {
@@ -31,24 +31,28 @@ void write_sample_json(const std::string& path) {
     ])";
 }
 
-int main() {
+TEST(InstrumentKeyManagerRegression, BasicLoadAndLookup) {
     const std::string tmp = "tests_tmp.json";
     write_sample_json(tmp);
 
     InstrumentKeyManager mgr;
-    bool loaded = mgr.load_from_json(tmp);
-    assert(loaded && "Failed to load sample JSON in regression test");
+    EXPECT_TRUE(mgr.load_from_json(tmp));
 
     auto r = mgr.get_by_symbol("RELIANCE");
-    assert(r && r->instrument_key == "NSE_EQ|INE123456789");
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(r->instrument_key, "NSE_EQ|INE123456789");
 
     auto tcs = mgr.get_by_key("NSE_EQ|INE987654321");
-    assert(tcs && tcs->tradingsymbol == "TCS");
+    ASSERT_TRUE(tcs.has_value());
+    EXPECT_EQ(tcs->tradingsymbol, "TCS");
 
     auto none = mgr.get_by_symbol("UNKNOWN_SYMBOL");
-    assert(!none && "Unexpectedly found UNKNOWN_SYMBOL");
+    EXPECT_FALSE(none.has_value());
 
     std::remove(tmp.c_str());
-    std::cout << "Regression test passed\n";
-    return 0;
+}
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
