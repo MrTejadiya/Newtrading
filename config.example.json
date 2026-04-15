@@ -1,0 +1,4 @@
+{
+  "token": "your_upstox_token_here",
+  "base_url": "https://api.upstox.com/v3"
+}

@@ -10,3 +10,6 @@
 
 # Logs
 *.log
+
+# Local config containing secrets
+config.json
