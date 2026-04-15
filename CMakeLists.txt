@@ -36,3 +36,11 @@ target_link_libraries(instrument_key_manager_regression PRIVATE nlohmann_json::n
 
 include(GoogleTest)
 gtest_discover_tests(instrument_key_manager_regression)
+
+add_executable(historical_data_manager_test tests/historical_data_manager_test.cpp src/HistoricalDataManager.cpp)
+target_include_directories(historical_data_manager_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(historical_data_manager_test PRIVATE nlohmann_json::nlohmann_json gtest_main)
+gtest_discover_tests(historical_data_manager_test)
+
+add_executable(historical_demo src/historical_demo.cpp src/InstrumentKeyManager.cpp src/HistoricalDataManager.cpp)
+target_link_libraries(historical_demo PRIVATE nlohmann_json::nlohmann_json)
