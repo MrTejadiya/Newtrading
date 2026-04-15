@@ -24,7 +24,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 # Create the executable pointing to your source file
-add_executable(${PROJECT_NAME} src/main.cpp src/InstrumentKeyManager.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp src/InstrumentKeyManager.cpp src/HistoricalDataManager.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
 
 # Enable testing and add a small regression test executable
