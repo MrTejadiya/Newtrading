@@ -1,0 +1,12 @@
+# Build output
+/build/
+
+# Editor files
+.vscode/
+*.swp
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
