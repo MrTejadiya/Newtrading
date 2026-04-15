@@ -134,7 +134,8 @@ def main():
             print(f"Failed to fetch data for {ik} after {args.retries} attempts")
             continue
 
-        out_json = os.path.join(args.out_dir, f"{ik.replace('|','_')}_{start}_{end}.json")
+        safe_key = ik.replace('|', '_')
+        out_json = os.path.join(args.out_dir, f"{safe_key}_{start}_{end}.json")
         try:
             data = resp.json()
         except Exception:
@@ -147,6 +148,19 @@ def main():
 
         save_json(out_json, data)
         print(f"Saved JSON for {ik} -> {out_json}")
+
+        # Save metadata to allow deterministic mapping back to the original instrument_key
+        meta = {
+            "instrument_key": ik,
+            "fetched_at": int(time.time() * 1000),
+            "start": start,
+            "end": end,
+            "interval": args.interval,
+            "source_url": url,
+        }
+        meta_path = os.path.join(args.out_dir, f"{safe_key}_{start}_{end}.meta.json")
+        save_json(meta_path, meta)
+        print(f"Saved metadata for {ik} -> {meta_path}")
 
         # If data looks like candles, try to save TSV for easy loading
         rows = None
