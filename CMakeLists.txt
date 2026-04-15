@@ -44,3 +44,7 @@ gtest_discover_tests(historical_data_manager_test)
 
 add_executable(historical_demo src/historical_demo.cpp src/InstrumentKeyManager.cpp src/HistoricalDataManager.cpp)
 target_link_libraries(historical_demo PRIVATE nlohmann_json::nlohmann_json)
+
+add_executable(run_historical_query tools/run_historical_query.cpp src/HistoricalDataManager.cpp)
+target_include_directories(run_historical_query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(run_historical_query PRIVATE nlohmann_json::nlohmann_json)

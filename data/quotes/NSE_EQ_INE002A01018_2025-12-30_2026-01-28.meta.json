@@ -1,0 +1,8 @@
+{
+  "instrument_key": "NSE_EQ|INE002A01018",
+  "fetched_at": 1776277839095,
+  "start": "2025-12-30",
+  "end": "2026-01-28",
+  "interval": "minutes/1",
+  "source_url": "https://api.upstox.com/v3/historical-candle/NSE_EQ%7CINE002A01018/minutes/1/2026-01-28/2025-12-30"
+}

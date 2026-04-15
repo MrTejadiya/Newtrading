@@ -18,7 +18,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -30,11 +30,13 @@ def parse_args():
     p.add_argument("--key", action="append", help="Instrument key (can be repeated)")
     p.add_argument("--start", required=True, help="Start timestamp or date (ISO8601 or epoch ms)")
     p.add_argument("--end", required=True, help="End timestamp or date (ISO8601 or epoch ms)")
-    p.add_argument("--interval", default="1minute", help="Interval/granularity (dependent on API)")
+    # For Upstox V3 we request: /historical-candle/:instrument_key/:unit/:interval/:to_date/:from_date
+    p.add_argument("--unit", default="minutes", help="Unit for V3 API: minutes|hours|days|weeks|months")
+    p.add_argument("--interval", default="1", help="Interval value for V3 API (numeric). For minutes use 1..300")
     p.add_argument("--base-url", default=os.environ.get("UPSTOX_BASE_URL", "https://api.upstox.com/v3"),
                    help="Base API URL")
     p.add_argument("--config", default="config.json", help="Path to JSON config file containing token/base_url")
-    p.add_argument("--endpoint", default="historical", help="Endpoint path (appended to base URL)")
+    p.add_argument("--endpoint", default="historical-candle", help="Endpoint path (appended to base URL). Keep as 'historical-candle' for V3")
     p.add_argument("--out-dir", default="data/quotes", help="Output directory for saved files")
     p.add_argument("--token-env", default="UPSTOX_TOKEN", help="Environment variable name for token")
     p.add_argument("--sleep", type=float, default=0.2, help="Seconds to sleep between requests to avoid rate limits")
@@ -51,6 +53,20 @@ def to_millis(ts: str) -> str:
         dt = datetime.fromisoformat(ts)
         return str(int(dt.timestamp() * 1000))
     except Exception:
+        return ts
+
+
+def to_yyyy_mm_dd(ts: str) -> str:
+    # Accept epoch ms or ISO date and return YYYY-MM-DD
+    try:
+        if ts.isdigit():
+            ms = int(ts)
+            dt = datetime.fromtimestamp(ms / 1000.0)
+            return dt.strftime('%Y-%m-%d')
+        dt = datetime.fromisoformat(ts)
+        return dt.strftime('%Y-%m-%d')
+    except Exception:
+        # last resort: if already YYYY-MM-DD like, return as-is
         return ts
 
 
@@ -131,67 +147,118 @@ def main():
     session = requests.Session()
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
-    start = to_millis(args.start)
-    end = to_millis(args.end)
+    # Keep both representations: epoch-ms (used for filenames) and YYYY-MM-DD (used by V3 path)
+    start_ms = to_millis(args.start)
+    end_ms = to_millis(args.end)
+    start_date = to_yyyy_mm_dd(args.start)
+    end_date = to_yyyy_mm_dd(args.end)
 
+    import urllib.parse
+    # Decide behavior for V3 historical-candle path: path params rather than query params
     for ik in keys:
-        params = {
-            "instrument_key": ik,
-            "start": start,
-            "end": end,
-            "interval": args.interval,
-        }
-
-        url = args.base_url.rstrip("/") + "/" + args.endpoint.lstrip("/")
-        print(f"Fetching {ik} -> {url} params={params}")
-
-        resp = fetch_with_retries(session, url, headers, params, retries=args.retries, timeout=args.timeout)
-        if resp is None:
-            print(f"Failed to fetch data for {ik} after {args.retries} attempts")
-            continue
-
         safe_key = ik.replace('|', '_')
-        out_json = os.path.join(args.out_dir, f"{safe_key}_{start}_{end}.json")
-        try:
-            data = resp.json()
-        except Exception:
-            # Fallback: save raw text
-            with open(out_json, "w", encoding="utf-8") as f:
-                f.write(resp.text)
-            print(f"Saved raw response for {ik} to {out_json}")
+        encoded_key = urllib.parse.quote(ik, safe='')
+
+        # Build requests in chunks for large minute-range requests to avoid API limits
+        unit = args.unit
+        interval = str(args.interval)
+
+        # Determine chunk size (days) based on unit/interval. For minutes with small intervals, restrict to ~30 days.
+        if unit.startswith('minutes') or unit.startswith('minute'):
+            try:
+                ival = int(interval)
+            except Exception:
+                ival = 1
+            if ival <= 15:
+                chunk_days = 30
+            else:
+                # larger minute intervals allow longer ranges; be conservative
+                chunk_days = 90
+        elif unit.startswith('hours'):
+            chunk_days = 90
+        else:
+            # days/weeks/months — allow full range
+            chunk_days = None
+
+        # iterate from start_date to end_date in chunks
+        cur_start = datetime.fromisoformat(start_date)
+        final_end = datetime.fromisoformat(end_date)
+
+        while cur_start <= final_end:
+            if chunk_days is None:
+                chunk_end_dt = final_end
+            else:
+                chunk_end_dt = cur_start + timedelta(days=chunk_days - 1)
+                if chunk_end_dt > final_end:
+                    chunk_end_dt = final_end
+
+            from_str = cur_start.strftime('%Y-%m-%d')
+            to_str = chunk_end_dt.strftime('%Y-%m-%d')
+
+            # V3 path expects: /historical-candle/:instrument_key/:unit/:interval/:to_date/:from_date
+            url = f"{args.base_url.rstrip('/')}/{args.endpoint.lstrip('/')}/{encoded_key}/{unit}/{interval}/{to_str}/{from_str}"
+            print(f"Fetching {ik} -> {url}")
+
+            # For fetch_with_retries keep params empty and pass URL directly
+            resp = fetch_with_retries(session, url, headers, {}, retries=args.retries, timeout=args.timeout)
+            if resp is None:
+                print(f"Failed to fetch data for {ik} chunk {from_str}->{to_str} after {args.retries} attempts")
+                cur_start = chunk_end_dt + timedelta(days=1)
+                continue
+
+            # prepare output filenames using chunk dates
+            out_json = os.path.join(args.out_dir, f"{safe_key}_{from_str}_{to_str}.json")
+            try:
+                data = resp.json()
+            except Exception:
+                # Fallback: save raw text
+                with open(out_json, "w", encoding="utf-8") as f:
+                    f.write(resp.text)
+                print(f"Saved raw response for {ik} to {out_json}")
+                time.sleep(args.sleep)
+                cur_start = chunk_end_dt + timedelta(days=1)
+                continue
+
+            save_json(out_json, data)
+            print(f"Saved JSON for {ik} -> {out_json}")
+
+            # Save metadata to allow deterministic mapping back to the original instrument_key
+            meta = {
+                "instrument_key": ik,
+                "fetched_at": int(time.time() * 1000),
+                "start": from_str,
+                "end": to_str,
+                "interval": f"{unit}/{interval}",
+                "source_url": url,
+            }
+            meta_path = os.path.join(args.out_dir, f"{safe_key}_{from_str}_{to_str}.meta.json")
+            save_json(meta_path, meta)
+            print(f"Saved metadata for {ik} -> {meta_path}")
+
+            # If data looks like candles, save TSV for easy loading (v3 returns data.candles as arrays)
+            rows = None
+            if isinstance(data, dict) and data.get('data') and isinstance(data['data'].get('candles'), list):
+                # convert candles arrays to dict rows with known columns
+                rows = []
+                for c in data['data']['candles']:
+                    # [timestamp, open, high, low, close, volume, oi]
+                    row = {
+                        'timestamp': c[0], 'open': c[1], 'high': c[2], 'low': c[3], 'close': c[4], 'volume': c[5]
+                    }
+                    # include oi if present
+                    if len(c) > 6:
+                        row['oi'] = c[6]
+                    rows.append(row)
+
+            if rows:
+                out_csv = os.path.join(args.out_dir, f"{safe_key}_{from_str}_{to_str}.tsv")
+                save_csv(out_csv, rows)
+                print(f"Saved TSV for {ik} -> {out_csv}")
+
             time.sleep(args.sleep)
-            continue
 
-        save_json(out_json, data)
-        print(f"Saved JSON for {ik} -> {out_json}")
-
-        # Save metadata to allow deterministic mapping back to the original instrument_key
-        meta = {
-            "instrument_key": ik,
-            "fetched_at": int(time.time() * 1000),
-            "start": start,
-            "end": end,
-            "interval": args.interval,
-            "source_url": url,
-        }
-        meta_path = os.path.join(args.out_dir, f"{safe_key}_{start}_{end}.meta.json")
-        save_json(meta_path, meta)
-        print(f"Saved metadata for {ik} -> {meta_path}")
-
-        # If data looks like candles, try to save TSV for easy loading
-        rows = None
-        if isinstance(data, list):
-            # assume list of dicts
-            rows = data
-        elif isinstance(data, dict) and "candles" in data and isinstance(data["candles"], list):
-            rows = data["candles"]
-
-        if rows:
-            out_csv = os.path.join(args.out_dir, f"{ik.replace('|','_')}_{start}_{end}.tsv")
-            save_csv(out_csv, rows)
-            print(f"Saved TSV for {ik} -> {out_csv}")
-
-        time.sleep(args.sleep)
+            # advance to next chunk
+            cur_start = chunk_end_dt + timedelta(days=1)
 
 
 if __name__ == "__main__":
