@@ -33,6 +33,7 @@ def parse_args():
     p.add_argument("--interval", default="1minute", help="Interval/granularity (dependent on API)")
     p.add_argument("--base-url", default=os.environ.get("UPSTOX_BASE_URL", "https://api.upstox.com/v3"),
                    help="Base API URL")
+    p.add_argument("--config", default="config.json", help="Path to JSON config file containing token/base_url")
     p.add_argument("--endpoint", default="historical", help="Endpoint path (appended to base URL)")
     p.add_argument("--out-dir", default="data/quotes", help="Output directory for saved files")
     p.add_argument("--token-env", default="UPSTOX_TOKEN", help="Environment variable name for token")
@@ -97,8 +98,23 @@ def fetch_with_retries(session: requests.Session, url: str, headers: Dict[str, s
 def main():
     args = parse_args()
     token = os.environ.get(args.token_env)
+    # If token not in env, try config file (JSON)
+    if not token and args.config:
+        try:
+            with open(args.config, "r", encoding="utf-8") as cf:
+                cfg = json.load(cf)
+                # support a few keys
+                token = cfg.get("token") or cfg.get("upstox_token") or (cfg.get("upstox") and cfg.get("upstox").get("token"))
+                # allow base_url override from config
+                if not args.base_url and cfg.get("base_url"): args.base_url = cfg.get("base_url")
+        except FileNotFoundError:
+            # config missing is fine; we'll error below
+            pass
+        except Exception as e:
+            print(f"Failed to read config {args.config}: {e}")
+
     if not token:
-        print(f"Missing access token: set environment variable {args.token_env}")
+        print(f"Missing access token: set environment variable {args.token_env} or provide it in {args.config}")
         sys.exit(2)
 
     keys = []
