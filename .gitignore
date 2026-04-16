@@ -13,3 +13,4 @@
 
 # Local config containing secrets
 config.json
+/data/
