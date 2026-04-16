@@ -24,7 +24,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 # Create the executable pointing to your source file
-add_executable(${PROJECT_NAME} src/main.cpp src/InstrumentKeyManager.cpp src/HistoricalDataManager.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp src/InstrumentKeyManager.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
 
 # Enable testing and add a small regression test executable
@@ -37,14 +37,5 @@ target_link_libraries(instrument_key_manager_regression PRIVATE nlohmann_json::n
 include(GoogleTest)
 gtest_discover_tests(instrument_key_manager_regression)
 
-add_executable(historical_data_manager_test tests/historical_data_manager_test.cpp src/HistoricalDataManager.cpp)
-target_include_directories(historical_data_manager_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(historical_data_manager_test PRIVATE nlohmann_json::nlohmann_json gtest_main)
-gtest_discover_tests(historical_data_manager_test)
-
-add_executable(historical_demo src/historical_demo.cpp src/InstrumentKeyManager.cpp src/HistoricalDataManager.cpp)
+add_executable(historical_demo src/historical_demo.cpp src/InstrumentKeyManager.cpp)
 target_link_libraries(historical_demo PRIVATE nlohmann_json::nlohmann_json)
-
-add_executable(run_historical_query tools/run_historical_query.cpp src/HistoricalDataManager.cpp)
-target_include_directories(run_historical_query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(run_historical_query PRIVATE nlohmann_json::nlohmann_json)
